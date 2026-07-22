@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, ref } from 'vue'
+import { nextTick, onMounted, ref } from 'vue'
 import {
   ArrowRight, Calendar, ChatDotRound, Check, CollectionTag, Connection, House, Location, Message, Monitor, Search, Setting, Star, UserFilled,
 } from '@element-plus/icons-vue'
@@ -21,22 +21,30 @@ const bookingForm = ref({ time: '', phone: '' })
 const booked = ref(false)
 
 const districtsOptions = ['静安', '徐汇', '长宁', '浦东', '杨浦']
-const houses = [
-  { id: 1, title: '衡复风貌区 · 安福路公寓', district: '徐汇', location: '安福路 218 弄', price: 8200, rooms: '1 室 1 厅', size: '58 m²', metro: '步行 6 分钟', score: 96, image: 'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=920&q=85', tags: ['整租', '近地铁', '朝南'] },
-  { id: 2, title: '大宁国际 · 高区两居', district: '静安', location: '广中西路 288 弄', price: 9300, rooms: '2 室 1 厅', size: '73 m²', metro: '步行 8 分钟', score: 92, image: 'https://images.unsplash.com/photo-1600566753086-00f18fb6b3ea?auto=format&fit=crop&w=920&q=85', tags: ['电梯', '可做饭', '采光好'] },
-  { id: 3, title: '古北新城 · 品质一居', district: '长宁', location: '荣华东道 96 弄', price: 7600, rooms: '1 室 1 厅', size: '52 m²', metro: '步行 9 分钟', score: 89, image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=920&q=85', tags: ['独立阳台', '有车位', '精装'] },
-  { id: 4, title: '前滩 · 江景次新房', district: '浦东', location: '东育路 255 弄', price: 9800, rooms: '1 室 1 厅', size: '61 m²', metro: '步行 5 分钟', score: 87, image: 'https://images.unsplash.com/photo-1600573472591-ee6b68d14c68?auto=format&fit=crop&w=920&q=85', tags: ['新房源', '近商圈', '智能门锁'] },
-]
+const houses = ref([])
+const messages = ref([])
 
-const messages = ref([
-  { role: 'assistant', content: '你好，我是住好家租赁顾问。告诉我预算、区域或通勤地点，我会为你缩小范围。' },
-])
+function applyAgentResponse(response) {
+  threadId.value = response.threadId || threadId.value
+  if (Array.isArray(response.state.matches)) houses.value = response.state.matches
+  messages.value.push({ role: 'assistant', content: response.content })
+}
 
-const visibleHouses = computed(() => houses.filter((house) => {
-  const keywordMatch = !keyword.value || `${house.title}${house.district}${house.location}`.includes(keyword.value)
-  const districtMatch = !districts.value.length || districts.value.includes(house.district)
-  return keywordMatch && districtMatch && house.price >= budget.value[0] && house.price <= budget.value[1]
-}))
+async function runSearch() {
+  if (chatLoading.value) return
+  const districtText = districts.value.length ? `，区域 ${districts.value.join('、')}` : ''
+  const keywordText = keyword.value ? `，关键词 ${keyword.value}` : ''
+  const content = `找房：${city.value}${districtText}，预算 ${budget.value[0]} 到 ${budget.value[1]} 元/月${keywordText}`
+  chatLoading.value = true
+  try {
+    applyAgentResponse(await askAgent(content, threadId.value))
+  } catch (error) {
+    messages.value.push({ role: 'assistant', content: `后端请求失败：${error.message}`, error: true })
+  } finally {
+    chatLoading.value = false
+    await scrollToBottom()
+  }
+}
 
 function selectSuggestion(text) {
   chatInput.value = text
@@ -51,9 +59,7 @@ async function sendMessage() {
   chatLoading.value = true
   await scrollToBottom()
   try {
-    const response = await askAgent(content, threadId.value)
-    threadId.value = response.threadId || threadId.value
-    messages.value.push({ role: 'assistant', content: response.content })
+    applyAgentResponse(await askAgent(content, threadId.value))
   } catch (error) {
     messages.value.push({ role: 'assistant', content: `抱歉，${error.message}。请稍后重试。`, error: true })
   } finally {
@@ -74,10 +80,25 @@ function openBooking(house) {
   bookingDialog.value = true
 }
 
-function confirmBooking() {
-  booked.value = true
-  messages.value.push({ role: 'assistant', content: `已收到 ${selectedHouse.value.title} 的看房申请。顾问会通过 ${bookingForm.value.phone || '预留联系方式'} 与你确认。` })
+async function confirmBooking() {
+  if (!bookingForm.value.time || !bookingForm.value.phone) return
+  chatLoading.value = true
+  try {
+    const time = new Date(bookingForm.value.time).toISOString().slice(0, 10)
+    const content = `预约看房：${selectedHouse.value.title}，时间 ${time}，联系电话 ${bookingForm.value.phone}`
+    messages.value.push({ role: 'user', content })
+    const response = await askAgent(content, threadId.value)
+    applyAgentResponse(response)
+    booked.value = response.state.booking?.status === 'submitted'
+  } catch (error) {
+    messages.value.push({ role: 'assistant', content: `预约提交失败：${error.message}`, error: true })
+  } finally {
+    chatLoading.value = false
+    await scrollToBottom()
+  }
 }
+
+onMounted(runSearch)
 </script>
 
 <template>
@@ -102,19 +123,19 @@ function confirmBooking() {
       <div class="filter-field"><label>城市</label><el-select v-model="city"><el-option label="上海" value="上海" /></el-select></div>
       <div class="filter-field"><label>意向区域</label><el-select v-model="districts" multiple collapse-tags placeholder="不限"><el-option v-for="item in districtsOptions" :key="item" :label="item" :value="item" /></el-select></div>
       <div class="filter-field budget-field"><label>月租预算 <span>{{ budget[0] / 1000 }}k - {{ budget[1] / 1000 }}k</span></label><el-slider v-model="budget" range :min="3000" :max="12000" :step="500" :show-tooltip="false" /></div>
-      <el-button class="filter-button" type="primary" :icon="Search">查看匹配</el-button>
+      <el-button class="filter-button" type="primary" :icon="Search" :loading="chatLoading" @click="runSearch">查看匹配</el-button>
     </section>
 
     <div class="content-grid">
       <section class="listing-section">
-        <div class="section-heading"><div><p class="eyebrow">为你匹配</p><h2>{{ visibleHouses.length }} 套优先房源</h2></div><el-segmented v-model="activeTab" :options="[{ label: '智能排序', value: 'recommend' }, { label: '最新发布', value: 'latest' }, { label: '价格优先', value: 'price' }]" /></div>
+        <div class="section-heading"><div><p class="eyebrow">后端匹配结果</p><h2>{{ houses.length }} 套优先房源</h2></div><el-segmented v-model="activeTab" :options="[{ label: '智能排序', value: 'recommend' }, { label: '最新发布', value: 'latest' }, { label: '价格优先', value: 'price' }]" /></div>
         <div class="property-grid">
-          <article v-for="house in visibleHouses" :key="house.id" class="property-card">
+          <article v-for="house in houses" :key="house.id" class="property-card">
             <div class="property-image"><img :src="house.image" :alt="house.title" /><span class="match-score"><Star /> {{ house.score }}% 匹配</span><button class="favorite" aria-label="收藏房源"><el-icon><Star /></el-icon></button></div>
             <div class="property-info"><div class="property-title-row"><h3>{{ house.title }}</h3><span class="price">{{ house.price.toLocaleString() }}<small>元/月</small></span></div><p class="location"><el-icon><Location /></el-icon>{{ house.location }} · {{ house.district }}</p><p class="property-spec"><span>{{ house.rooms }}</span><i></i><span>{{ house.size }}</span><i></i><span>{{ house.metro }}</span></p><div class="tag-row"><el-tag v-for="tag in house.tags" :key="tag" size="small" effect="plain">{{ tag }}</el-tag></div><div class="property-actions"><el-button text :icon="ArrowRight">查看详情</el-button><el-button type="primary" plain @click="openBooking(house)">预约看房</el-button></div></div>
           </article>
         </div>
-        <el-empty v-if="!visibleHouses.length" description="没有符合当前条件的房源，请放宽筛选条件。" />
+        <el-empty v-if="!houses.length && !chatLoading" description="后端没有返回符合当前条件的房源，请放宽筛选条件。" />
       </section>
 
       <aside class="assistant-column">

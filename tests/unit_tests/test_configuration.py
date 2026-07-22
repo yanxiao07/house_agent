@@ -16,7 +16,12 @@ def test_routes_recommendation_without_provider(monkeypatch) -> None:
     )
 
     assert result["intent"] == "recommend"
-    assert result["user_preferences"] == {"budget_min": 0, "budget_max": 8000}
+    assert result["user_preferences"] == {
+        "budget_min": 0,
+        "budget_max": 8000,
+        "districts": ["静安"],
+    }
+    assert result["matches"] == []
     assert isinstance(result["messages"][-1], AIMessage)
 
 

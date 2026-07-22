@@ -162,6 +162,7 @@ cython_debug/
 #.idea/
 .idea/
 .langgraph_api/
+.langgraph-dev.*.log
 
 # Front-end build output and local dependencies
 web/node_modules/

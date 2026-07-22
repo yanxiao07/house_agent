@@ -12,3 +12,5 @@ class RentalState(MessagesState):
 
     intent: Intent
     user_preferences: dict[str, object]
+    matches: list[dict[str, object]]
+    booking: dict[str, object]

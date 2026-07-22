@@ -43,12 +43,20 @@ npm install
 npm run dev
 ```
 
-访问 Vite 输出的地址，默认是 `http://localhost:5173`。未设置 `VITE_LANGGRAPH_API_URL` 时，前端仍可用内置演示数据完整体验筛选、对话和预约流程；配置为本地 LangGraph Server 地址后，对话会发送至 `house_agent`。
+访问 Vite 输出的地址，默认是 `http://localhost:5173`。前端需要配置 LangGraph Server 地址；未配置时会明确提示服务未连接，不会显示模拟的助手回复。
 
 ```dotenv
 VITE_LANGGRAPH_API_URL=http://127.0.0.1:2024
 VITE_LANGGRAPH_ASSISTANT_ID=house_agent
 ```
+
+前端通过 LangGraph 的流式 `values` 事件消费主图状态：
+
+- `messages`：助手对话内容
+- `matches`：后端目录筛选后的房源卡片
+- `booking`：预约工单状态与编号
+
+因此筛选、对话和预约都由同一条后端会话驱动，前端不维护独立的模拟结果。
 
 ## 配置说明
 
