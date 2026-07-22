@@ -7,7 +7,7 @@
 - 根据城市、区域、预算、户型和附加偏好推荐房源
 - 保存用户预算偏好并支持查询历史预约
 - 引导式收集预约信息，生成预约工单
-- Vue 3 + Element Plus 商业化工作台：筛选、房源卡片、预约弹窗和对话助手
+- Vue 3 + Element Plus 商业化工作台：筛选、预约弹窗和对话助手
 - Three.js 房源概览场景，桌面端自适应渲染，小屏平稳降级
 
 ## 项目结构
@@ -50,13 +50,13 @@ VITE_LANGGRAPH_API_URL=http://127.0.0.1:2024
 VITE_LANGGRAPH_ASSISTANT_ID=house_agent
 ```
 
-前端通过 LangGraph 的流式 `values` 事件消费主图状态：
+前端通过 LangGraph 的流式 `values` 和 `updates` 事件消费主图状态：
 
 - `messages`：助手对话内容
-- `matches`：后端目录筛选后的房源卡片
-- `booking`：预约工单状态与编号
+- `messages`：后端 SQL 推荐结果和工单反馈
+- `__interrupt__`：原图在缺失城市、预算、房源、电话或证件信息时发出的追问
 
-因此筛选、对话和预约都由同一条后端会话驱动，前端不维护独立的模拟结果。
+因此筛选、对话和预约都由同一条后端会话驱动；房源数据仍来自原有 MySQL + SQLDatabaseToolkit 工作流，前端不维护模拟目录。
 
 ## 配置说明
 

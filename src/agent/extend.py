@@ -1,14 +1,11 @@
-"""Standalone general rental-support graph."""
+from langgraph.constants import START
+from langgraph.graph import MessagesState, StateGraph
 
-from langgraph.constants import END, START
-from langgraph.graph import StateGraph
+from agent.node.extend import extend_node
 
-from agent.common.context import ContextSchema
-from agent.state import RentalState
-from agent.workflow import general_node
-
-builder = StateGraph(RentalState, context_schema=ContextSchema)
-builder.add_node("general", general_node)
-builder.add_edge(START, "general")
-builder.add_edge("general", END)
-extend_graph = builder.compile()
+extend_graph = (
+    StateGraph(MessagesState)
+    .add_node(extend_node)
+    .add_edge(START, "extend_node")
+    .compile()
+)

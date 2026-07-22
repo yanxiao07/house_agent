@@ -1,14 +1,24 @@
-"""Standalone viewing-reservation graph."""
-
 from langgraph.constants import END, START
 from langgraph.graph import StateGraph
+from langgraph.prebuilt import tools_condition
 
 from agent.common.context import ContextSchema
-from agent.state import RentalState
-from agent.workflow import reservation_node
+from agent.node.reserve import (
+    add_reserve_message,
+    call_orders,
+    get_id,
+    get_phone,
+    get_title,
+    tool_node,
+)
+from agent.state.reserve import ReserveState
 
-builder = StateGraph(RentalState, context_schema=ContextSchema)
-builder.add_node("reserve", reservation_node)
-builder.add_edge(START, "reserve")
-builder.add_edge("reserve", END)
+builder = StateGraph(ReserveState, context_schema=ContextSchema)
+builder.add_sequence([get_title, get_phone, get_id, add_reserve_message, call_orders])
+builder.add_node("tool_node", tool_node)
+builder.add_edge(START, "get_title")
+builder.add_conditional_edges(
+    "call_orders", tools_condition, {"tools": "tool_node", "__end__": END}
+)
+builder.add_edge("tool_node", "call_orders")
 reserve_graph = builder.compile()

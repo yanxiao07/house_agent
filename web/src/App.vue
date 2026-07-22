@@ -1,5 +1,5 @@
 <script setup>
-import { nextTick, onMounted, ref } from 'vue'
+import { nextTick, ref } from 'vue'
 import {
   ArrowRight, Calendar, ChatDotRound, Check, CollectionTag, Connection, House, Location, Message, Monitor, Search, Setting, Star, UserFilled,
 } from '@element-plus/icons-vue'
@@ -14,6 +14,7 @@ const activeTab = ref('recommend')
 const chatInput = ref('')
 const chatLoading = ref(false)
 const threadId = ref('')
+const pendingInterrupt = ref(false)
 const chatScroll = ref(null)
 const bookingDialog = ref(false)
 const selectedHouse = ref(null)
@@ -27,6 +28,7 @@ const messages = ref([])
 function applyAgentResponse(response) {
   threadId.value = response.threadId || threadId.value
   if (Array.isArray(response.state.matches)) houses.value = response.state.matches
+  pendingInterrupt.value = response.interrupted
   messages.value.push({ role: 'assistant', content: response.content })
 }
 
@@ -37,7 +39,7 @@ async function runSearch() {
   const content = `找房：${city.value}${districtText}，预算 ${budget.value[0]} 到 ${budget.value[1]} 元/月${keywordText}`
   chatLoading.value = true
   try {
-    applyAgentResponse(await askAgent(content, threadId.value))
+    applyAgentResponse(await askAgent(content, threadId.value, pendingInterrupt.value))
   } catch (error) {
     messages.value.push({ role: 'assistant', content: `后端请求失败：${error.message}`, error: true })
   } finally {
@@ -59,7 +61,7 @@ async function sendMessage() {
   chatLoading.value = true
   await scrollToBottom()
   try {
-    applyAgentResponse(await askAgent(content, threadId.value))
+    applyAgentResponse(await askAgent(content, threadId.value, pendingInterrupt.value))
   } catch (error) {
     messages.value.push({ role: 'assistant', content: `抱歉，${error.message}。请稍后重试。`, error: true })
   } finally {
@@ -98,7 +100,6 @@ async function confirmBooking() {
   }
 }
 
-onMounted(runSearch)
 </script>
 
 <template>
