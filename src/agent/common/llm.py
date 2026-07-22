@@ -6,8 +6,9 @@ from functools import lru_cache
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 
-load_dotenv()
-
+# LangGraph workers may inherit stale variables from a previous dev-server run.
+# The project-local .env is the explicit source of truth for local development.
+load_dotenv(override=True)
 
 def is_configured() -> bool:
     """Return whether an LLM API key is available."""
@@ -20,9 +21,11 @@ def get_model() -> ChatOpenAI:
     api_key = os.getenv("LLM_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
     if not api_key:
         raise RuntimeError("Missing LLM_API_KEY or DEEPSEEK_API_KEY.")
+    model_name = os.getenv("LLM_MODEL") or os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    base_url = os.getenv("LLM_BASE_URL") or os.getenv("DEEPSEEK_BASE_URL")
     return ChatOpenAI(
-        model=os.getenv("LLM_MODEL") or os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
-        base_url=os.getenv("LLM_BASE_URL") or os.getenv("DEEPSEEK_BASE_URL"),
+        model=model_name,
+        base_url=base_url,
         api_key=api_key,
         temperature=float(os.getenv("LLM_TEMPERATURE", "0")),
     )

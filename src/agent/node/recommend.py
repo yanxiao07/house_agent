@@ -118,15 +118,13 @@ def list_tables(state: RecommendState):
 
 
 def call_get_schema(state: RecommendState):
-    response = (
-        get_model()
-        .bind_tools([_tool("sql_db_schema")], tool_choice="any")
-        .invoke(state["messages"])
-    )
+    response = get_model().bind_tools([_tool("sql_db_schema")]).invoke(state["messages"])
     return {"messages": [response]}
 
 
 def get_schema_node(state: RecommendState):
+    if not state["messages"][-1].tool_calls:
+        return {"messages": []}
     return ToolNode([_tool("sql_db_schema")], name="get_schema").invoke(state)
 
 
@@ -145,17 +143,13 @@ def generate_query(state: RecommendState):
 def check_query(state: RecommendState):
     last = state["messages"][-1]
     query = last.tool_calls[0]["args"]["query"]
-    response = (
-        get_model()
-        .bind_tools([_tool("sql_db_query")], tool_choice="any")
-        .invoke(
-            [
-                SystemMessage(content="检查 SQL 查询并调用 sql_db_query 执行。"),
-                HumanMessage(content=query),
-            ]
-        )
+    response = get_model().bind_tools([_tool("sql_db_query")]).invoke(
+        [SystemMessage(content="检查 SQL 查询并调用 sql_db_query 执行。"), HumanMessage(content=query)]
     )
-    response.id = last.id
+    if not response.tool_calls:
+        response = last
+    else:
+        response.id = last.id
     return {"messages": [response]}
 
 

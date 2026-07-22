@@ -1,6 +1,7 @@
-from typing import Literal, TypedDict
+from typing import Literal
 
 from langgraph.graph import MessagesState
+from typing_extensions import TypedDict
 
 
 class State(MessagesState):

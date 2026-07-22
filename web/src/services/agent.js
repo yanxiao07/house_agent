@@ -14,7 +14,10 @@ function parseStream(body) {
     if (!payload) continue
     try {
       const data = JSON.parse(payload)
-      if (/^event:\s*values\s*$/m.test(event)) latestState = data
+      if (/^event:\s*values\s*$/m.test(event)) {
+        latestState = data
+        interrupt = data.__interrupt__?.[0]?.value || interrupt
+      }
       if (/^event:\s*updates\s*$/m.test(event)) {
         interrupt = data.__interrupt__?.[0]?.value || interrupt
       }

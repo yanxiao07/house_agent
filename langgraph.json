@@ -2,10 +2,10 @@
   "$schema": "https://langgra.ph/schema.json",
   "dependencies": ["."],
   "graphs": {
-    "house_agent": "./src/agent/graph.py:graph",
-    "recommend_agent": "./src/agent/recommend.py:recommend_graph",
-    "reserve_agent": "./src/agent/reserve.py:reserve_graph",
-    "extend_agent": "./src/agent/extend.py:extend_graph"
+    "house_agent": "agent.graph:graph",
+    "recommend_agent": "agent.recommend:recommend_graph",
+    "reserve_agent": "agent.reserve:reserve_graph",
+    "extend_agent": "agent.extend:extend_graph"
   },
   "env": ".env",
   "image_distro": "wolfi"
