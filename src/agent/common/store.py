@@ -5,6 +5,9 @@ class ReservedInfo(BaseModel):
     order_id: str
     title: str
     phone_number: str
+    status: str = "confirmed"
+    viewing_time: str | None = None
+    created_at: str | None = None
     price: float | None = None
     intro: str | None = None
     city_name: str | None = None

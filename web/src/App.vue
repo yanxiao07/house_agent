@@ -1,7 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, ref } from 'vue'
 import {
-  ArrowRight, Calendar, ChatDotRound, Check, CollectionTag, Connection, House, Location, Message, Monitor, Search, Setting, Star, UserFilled,
+  ArrowRight, Calendar, ChatDotRound, Check, CloseBold, CollectionTag, Connection, House, Location, Message, Monitor, RefreshRight, Search, Setting, Star, Tickets, UserFilled,
 } from '@element-plus/icons-vue'
 import HouseScene from './components/HouseScene.vue'
 import { askAgent } from './services/agent'
@@ -25,6 +25,10 @@ const bookingSaving = ref(false)
 const confirmedBooking = ref(false)
 const bookingFormV2 = ref({ time: '', phone: '', idCard: '' })
 const reservedHouseIds = ref([])
+const appointmentPhone = ref(window.localStorage.getItem('house-agent-phone') || '')
+const appointments = ref([])
+const appointmentsLoading = ref(false)
+const appointmentsError = ref('')
 
 const districtsOptions = ['静安', '徐汇', '长宁', '浦东', '杨浦']
 const houses = ref([])
@@ -62,6 +66,11 @@ function formatAssistantContent(content) {
     .replace(/^\|\s*(.*?)\s*\|$/gm, (_, row) => row.split('|').map((cell) => cell.trim()).filter(Boolean).join('  '))
     .replace(/\n{3,}/g, '\n\n')
     .trim()
+}
+
+function formatAppointmentTime(value) {
+  if (!value) return '待顾问确认'
+  return new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 }
 
 async function loadCatalog() {
@@ -135,12 +144,54 @@ async function submitBooking() {
     response = await askAgent(bookingFormV2.value.idCard, response.threadId, true, 'reserve_agent')
     messages.value.push({ role: 'assistant', content: formatAssistantContent(response.content) })
     reservedHouseIds.value = [...new Set([...reservedHouseIds.value, String(selectedHouse.value.id)])]
+    appointmentPhone.value = bookingFormV2.value.phone.trim()
+    window.localStorage.setItem('house-agent-phone', appointmentPhone.value)
+    const orderId = response.content.match(/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}/i)?.[0]
+    if (orderId) await syncAppointment(orderId)
     confirmedBooking.value = true
   } catch (error) {
     messages.value.push({ role: 'assistant', content: `预约提交失败：${error.message}`, error: true })
   } finally {
     bookingSaving.value = false
     await scrollToBottom()
+  }
+}
+
+async function loadAppointments() {
+  const phoneNumber = appointmentPhone.value.trim()
+  if (!phoneNumber || appointmentsLoading.value) return
+  appointmentsLoading.value = true
+  appointmentsError.value = ''
+  try {
+    window.localStorage.setItem('house-agent-phone', phoneNumber)
+    const response = await askAgent(JSON.stringify({ action: 'read', phone_number: phoneNumber }), '', false, 'appointments_agent')
+    appointments.value = response.state.appointments || []
+  } catch (error) {
+    appointmentsError.value = `预约记录加载失败：${error.message}`
+  } finally {
+    appointmentsLoading.value = false
+  }
+}
+
+async function syncAppointment(orderId) {
+  const response = await askAgent(JSON.stringify({
+    action: 'enrich', order_id: orderId, phone_number: appointmentPhone.value,
+    viewing_time: bookingFormV2.value.time ? new Date(bookingFormV2.value.time).toISOString() : '',
+  }), '', false, 'appointments_agent')
+  appointments.value = response.state.appointments || []
+}
+
+async function cancelAppointment(appointment) {
+  if (!window.confirm(`确认取消“${appointment.title}”的预约吗？`)) return
+  appointmentsLoading.value = true
+  try {
+    const response = await askAgent(JSON.stringify({ action: 'cancel', order_id: appointment.order_id, phone_number: appointmentPhone.value }), '', false, 'appointments_agent')
+    appointments.value = response.state.appointments || []
+    reservedHouseIds.value = reservedHouseIds.value.filter((houseId) => !houses.value.find((house) => String(house.id) === houseId && house.title === appointment.title))
+  } catch (error) {
+    appointmentsError.value = `预约取消失败：${error.message}`
+  } finally {
+    appointmentsLoading.value = false
   }
 }
 
@@ -162,7 +213,10 @@ async function confirmBooking() {
   }
 }
 
-onMounted(loadCatalog)
+onMounted(() => {
+  loadCatalog()
+  loadAppointments()
+})
 
 </script>
 
@@ -210,6 +264,19 @@ onMounted(loadCatalog)
         <section class="service-card"><el-icon><CollectionTag /></el-icon><div><strong>服务保障</strong><p>真实房源核验 · 一对一带看 · 签约支持</p></div><el-icon class="service-arrow"><ArrowRight /></el-icon></section>
       </aside>
     </div>
+
+    <section id="lease" class="appointment-section">
+      <div class="appointment-heading"><div><p class="eyebrow">预约中心</p><h2>我的预约</h2></div><div class="appointment-query"><el-input v-model="appointmentPhone" placeholder="预约手机号" clearable @keyup.enter="loadAppointments" /><el-button type="primary" :icon="RefreshRight" :loading="appointmentsLoading" @click="loadAppointments">查询</el-button></div></div>
+      <el-alert v-if="appointmentsError" :title="appointmentsError" type="error" :closable="false" show-icon />
+      <div v-if="appointments.length" class="appointment-grid">
+        <article v-for="appointment in appointments" :key="appointment.order_id" class="appointment-card" :class="{ cancelled: appointment.status === 'cancelled' }">
+          <div class="appointment-card-header"><el-icon><Tickets /></el-icon><div><h3>{{ appointment.title }}</h3><p>工单 {{ appointment.order_id }}</p></div><el-tag :type="appointment.status === 'cancelled' ? 'info' : 'success'" effect="light">{{ appointment.status === 'cancelled' ? '已取消' : '预约确认' }}</el-tag></div>
+          <dl><div><dt>看房时间</dt><dd>{{ formatAppointmentTime(appointment.viewing_time) }}</dd></div><div><dt>联系电话</dt><dd>{{ appointment.phone_number }}</dd></div></dl>
+          <div class="appointment-card-actions"><span>{{ appointment.created_at ? `提交于 ${formatAppointmentTime(appointment.created_at)}` : '预约工单已生成' }}</span><el-button v-if="appointment.status !== 'cancelled'" text type="danger" :icon="CloseBold" @click="cancelAppointment(appointment)">取消预约</el-button></div>
+        </article>
+      </div>
+      <el-empty v-else-if="!appointmentsLoading" description="暂无预约记录" />
+    </section>
 
     <el-dialog v-model="bookingDialog" width="460" class="booking-dialog" destroy-on-close>
       <template #header><div><p class="eyebrow">预约看房</p><h2>{{ selectedHouse?.title }}</h2></div></template>
@@ -287,6 +354,116 @@ onMounted(loadCatalog)
 
 .property-card.is-reserved .favorite {
   top: 46px;
+}
+
+.appointment-section {
+  margin-top: 42px;
+  padding-top: 26px;
+  border-top: 1px solid #dfe7e2;
+}
+
+.appointment-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.appointment-heading h2 {
+  margin: 0;
+  color: #1e2926;
+  font-size: 22px;
+}
+
+.appointment-query {
+  display: flex;
+  gap: 8px;
+  width: min(100%, 350px);
+}
+
+.appointment-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.appointment-card {
+  padding: 17px;
+  border: 1px solid #dce7e1;
+  border-left: 3px solid #287464;
+  border-radius: 7px;
+  background: #fff;
+}
+
+.appointment-card.cancelled {
+  border-left-color: #a0aaa5;
+  opacity: .7;
+}
+
+.appointment-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.appointment-card-header > .el-icon {
+  margin-top: 2px;
+  color: #287464;
+  font-size: 20px;
+}
+
+.appointment-card-header h3 {
+  margin: 0;
+  color: #26372f;
+  font-size: 15px;
+}
+
+.appointment-card-header p {
+  margin: 5px 0 0;
+  color: #82908a;
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.appointment-card-header .el-tag {
+  margin-left: auto;
+  flex: none;
+}
+
+.appointment-card dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 16px 0 14px;
+}
+
+.appointment-card dt {
+  margin-bottom: 4px;
+  color: #89958f;
+  font-size: 11px;
+}
+
+.appointment-card dd {
+  margin: 0;
+  color: #45564e;
+  font-size: 13px;
+}
+
+.appointment-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 11px;
+  border-top: 1px solid #edf1ee;
+  color: #87928d;
+  font-size: 11px;
+}
+
+@media (max-width: 700px) {
+  .appointment-heading { align-items: flex-start; flex-direction: column; }
+  .appointment-query { width: 100%; }
+  .appointment-grid { grid-template-columns: 1fr; }
 }
 
 </style>
