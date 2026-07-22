@@ -6,6 +6,10 @@ The Vue client does not contain a mock property catalogue. On first load it call
 
 The two graph IDs used by the browser are `browse_agent` for catalogue loading and `house_agent` for conversation, recommendation, and reservation interrupts.
 
+### Catalogue operations and reservations
+
+`catalog_admin_agent` provides create, read, update, and delete operations for the MySQL `house` table. The UI asks for confirmation before deletion. The booking dialog resumes the original `reserve_agent` interrupts for the property title, phone number, and identity number; after a work order is generated, the matching card is promoted and marked as confirmed. Assistant responses also normalize Markdown tables before rendering in the chat panel.
+
 面向长租场景的智能找房与预约看房系统。项目以 LangGraph 编排租房意图识别、房源推荐、预约工单和用户偏好查询；`web/` 提供独立的 Vue 3 租赁工作台。
 
 ## 功能
