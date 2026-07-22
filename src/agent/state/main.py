@@ -7,6 +7,7 @@ from typing_extensions import TypedDict
 class State(MessagesState):
     user_preferences: dict
     user_intent: str
+    listings: list[dict]
 
 
 class NeedReserveOutput(TypedDict):

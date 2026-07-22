@@ -16,6 +16,7 @@ from langgraph.store.base import BaseStore
 from langgraph.types import interrupt
 from pydantic import BaseModel
 
+from agent.catalog import list_for_query
 from agent.common.context import ContextSchema
 from agent.common.llm import get_model
 from agent.common.store import UserPreferences
@@ -154,4 +155,7 @@ def check_query(state: RecommendState):
 
 
 def run_query_node(state: RecommendState):
-    return ToolNode([_tool("sql_db_query")], name="run_query").invoke(state)
+    result = ToolNode([_tool("sql_db_query")], name="run_query").invoke(state)
+    query = state["messages"][-1].tool_calls[0]["args"].get("query", "")
+    result["listings"] = list_for_query(query)
+    return result

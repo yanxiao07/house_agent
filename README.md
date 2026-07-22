@@ -1,5 +1,11 @@
 # House Agent
 
+## Live listing data flow
+
+The Vue client does not contain a mock property catalogue. On first load it calls the `browse_agent` graph, which returns the latest MySQL `house` records as `listings` card data. A rental recommendation keeps the original `house_agent` SQL workflow unchanged; after its SQL query completes, the selected IDs are hydrated from the same table and returned as `listings`. The UI then replaces the initial catalogue with only those recommended cards.
+
+The two graph IDs used by the browser are `browse_agent` for catalogue loading and `house_agent` for conversation, recommendation, and reservation interrupts.
+
 面向长租场景的智能找房与预约看房系统。项目以 LangGraph 编排租房意图识别、房源推荐、预约工单和用户偏好查询；`web/` 提供独立的 Vue 3 租赁工作台。
 
 ## 功能

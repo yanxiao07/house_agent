@@ -1,5 +1,5 @@
 <script setup>
-import { nextTick, ref } from 'vue'
+import { nextTick, onMounted, ref } from 'vue'
 import {
   ArrowRight, Calendar, ChatDotRound, Check, CollectionTag, Connection, House, Location, Message, Monitor, Search, Setting, Star, UserFilled,
 } from '@element-plus/icons-vue'
@@ -27,9 +27,18 @@ const messages = ref([])
 
 function applyAgentResponse(response) {
   threadId.value = response.threadId || threadId.value
-  if (Array.isArray(response.state.matches)) houses.value = response.state.matches
+  if (Array.isArray(response.state.listings)) houses.value = response.state.listings
   pendingInterrupt.value = response.interrupted
-  messages.value.push({ role: 'assistant', content: response.content })
+  if (response.content) messages.value.push({ role: 'assistant', content: response.content })
+}
+
+async function loadCatalog() {
+  try {
+    const response = await askAgent('', '', false, 'browse_agent')
+    if (Array.isArray(response.state.listings)) houses.value = response.state.listings
+  } catch (error) {
+    messages.value.push({ role: 'assistant', content: `房源初始化失败：${error.message}`, error: true })
+  }
 }
 
 async function runSearch() {
@@ -100,6 +109,8 @@ async function confirmBooking() {
   }
 }
 
+onMounted(loadCatalog)
+
 </script>
 
 <template>
@@ -153,3 +164,25 @@ async function confirmBooking() {
     </el-dialog>
   </main>
 </template>
+
+<style scoped>
+.property-image:has(img:not([src])), .property-image:has(img[src=""]) {
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #e9f0ea, #d6e2dc);
+}
+
+.property-image:has(img:not([src]))::before, .property-image:has(img[src=""])::before {
+  content: 'Database record';
+  padding: 6px 9px;
+  border: 1px solid rgba(42, 122, 105, .24);
+  border-radius: 4px;
+  color: #37685d;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.property-image:has(img:not([src])) .match-score, .property-image:has(img[src=""]) .match-score {
+  display: none;
+}
+</style>

@@ -40,7 +40,7 @@ async function createThread() {
   return data.thread_id
 }
 
-export async function askAgent(content, threadId, resume = false) {
+export async function askAgent(content, threadId, resume = false, activeAssistantId = assistantId) {
   if (!apiUrl) {
     throw new Error('租赁服务未连接，请配置 VITE_LANGGRAPH_API_URL')
   }
@@ -50,7 +50,7 @@ export async function askAgent(content, threadId, resume = false) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      assistant_id: assistantId,
+      assistant_id: activeAssistantId,
       ...(resume ? { command: { resume: content } } : { input: { messages: [{ type: 'human', content }] } }),
       stream_mode: 'values',
       config: { configurable: { user_id: 'web-demo-user' } },
@@ -59,7 +59,7 @@ export async function askAgent(content, threadId, resume = false) {
   if (!response.ok) throw new Error(`租赁服务不可用 (${response.status})`)
 
   const { state, interrupt } = parseStream(await response.text())
-  const message = interrupt || getLastMessage(state)
+  const message = interrupt || getLastMessage(state) || (Array.isArray(state.listings) ? 'Catalog loaded' : '')
   if (!message) throw new Error('服务未返回有效响应')
   return { content: message, threadId: thread, state, interrupted: Boolean(interrupt) }
 }

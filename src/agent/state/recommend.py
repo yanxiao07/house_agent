@@ -3,6 +3,7 @@ from langgraph.graph import MessagesState
 
 class RecommendState(MessagesState):
     user_preferences: dict
+    listings: list[dict]
     city: str
     budget_min: float
     budget_max: float
