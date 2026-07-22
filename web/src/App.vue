@@ -1,9 +1,8 @@
 <script setup>
 import { computed, nextTick, onMounted, ref } from 'vue'
 import {
-  ArrowRight, Calendar, ChatDotRound, Check, CollectionTag, Connection, Delete, EditPen, House, Location, Message, Monitor, Plus, Search, Setting, Star, UserFilled,
+  ArrowRight, Calendar, ChatDotRound, Check, CollectionTag, Connection, House, Location, Message, Monitor, Search, Setting, Star, UserFilled,
 } from '@element-plus/icons-vue'
-import { ElMessageBox } from 'element-plus'
 import HouseScene from './components/HouseScene.vue'
 import { askAgent } from './services/agent'
 
@@ -26,10 +25,6 @@ const bookingSaving = ref(false)
 const confirmedBooking = ref(false)
 const bookingFormV2 = ref({ time: '', phone: '', idCard: '' })
 const reservedHouseIds = ref([])
-const listingDialog = ref(false)
-const listingSaving = ref(false)
-const editingListingId = ref('')
-const listingForm = ref({})
 
 const districtsOptions = ['静安', '徐汇', '长宁', '浦东', '杨浦']
 const houses = ref([])
@@ -149,53 +144,6 @@ async function submitBooking() {
   }
 }
 
-function emptyListing() {
-  return { title: '', city: city.value, district: '', community: '', address: '', price: 0, area: 0, rooms: 'one', rent_type: 'whole_rent', position: 'south', intro: '' }
-}
-
-function openCreateListing() {
-  editingListingId.value = ''
-  listingForm.value = emptyListing()
-  listingDialog.value = true
-}
-
-function openEditListing(house) {
-  editingListingId.value = String(house.id)
-  listingForm.value = {
-    title: house.title, city: house.city, district: house.district, community: house.location?.split(' · ')[0] || '',
-    address: house.location?.split(' · ').slice(1).join(' · ') || '', price: Number(house.price),
-    area: Number.parseFloat(house.size) || 0, rooms: house.rooms, rent_type: house.metro, position: house.tags?.[1] || 'south', intro: house.intro || '',
-  }
-  listingDialog.value = true
-}
-
-async function saveListing() {
-  if (!listingForm.value.title || listingSaving.value) return
-  listingSaving.value = true
-  try {
-    const action = editingListingId.value ? 'update' : 'create'
-    const response = await askAgent(JSON.stringify({ action, listing_id: editingListingId.value, listing: listingForm.value }), '', false, 'catalog_admin_agent')
-    if (/failed/i.test(response.content)) throw new Error(response.content)
-    houses.value = response.state.listings || houses.value
-    listingDialog.value = false
-  } catch (error) {
-    messages.value.push({ role: 'assistant', content: `房源保存失败：${error.message}`, error: true })
-  } finally {
-    listingSaving.value = false
-  }
-}
-
-async function removeListing(house) {
-  try {
-    await ElMessageBox.confirm(`确认删除“${house.title}”吗？此操作会删除数据库中的该房源。`, '删除房源', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' })
-    const response = await askAgent(JSON.stringify({ action: 'delete', listing_id: String(house.id) }), '', false, 'catalog_admin_agent')
-    if (/failed/i.test(response.content)) throw new Error(response.content)
-    houses.value = response.state.listings || houses.value
-  } catch (error) {
-    if (error !== 'cancel' && error !== 'close') messages.value.push({ role: 'assistant', content: `房源删除失败：${error.message}`, error: true })
-  }
-}
-
 async function confirmBooking() {
   if (!bookingForm.value.time || !bookingForm.value.phone) return
   chatLoading.value = true
@@ -246,12 +194,11 @@ onMounted(loadCatalog)
     <div class="content-grid">
       <section class="listing-section">
         <div class="section-heading"><div><p class="eyebrow">后端匹配结果</p><h2>{{ houses.length }} 套优先房源</h2></div><el-segmented v-model="activeTab" :options="[{ label: '智能排序', value: 'recommend' }, { label: '最新发布', value: 'latest' }, { label: '价格优先', value: 'price' }]" /></div>
-        <div class="listing-toolbar"><span>当前排序：{{ activeTab === 'recommend' ? '智能匹配' : activeTab === 'latest' ? '最新发布' : '价格优先' }}</span><el-button type="primary" plain :icon="Plus" @click="openCreateListing">新增房源</el-button></div>
+        <div class="listing-toolbar"><span>当前排序：{{ activeTab === 'recommend' ? '智能匹配' : activeTab === 'latest' ? '最新发布' : '价格优先' }}</span></div>
         <div class="property-grid">
           <article v-for="house in sortedHouses" :key="house.id" class="property-card" :class="{ 'is-reserved': reservedHouseIds.includes(String(house.id)) }">
             <div class="property-image"><img :src="house.image" :alt="house.title" /><span class="match-score"><Star /> {{ house.score }}% 匹配</span><button class="favorite" aria-label="收藏房源"><el-icon><Star /></el-icon></button></div>
             <div class="property-info"><div class="property-title-row"><h3>{{ house.title }}</h3><span class="price">{{ house.price.toLocaleString() }}<small>元/月</small></span></div><p class="location"><el-icon><Location /></el-icon>{{ house.location }} · {{ house.district }}</p><p class="property-spec"><span>{{ house.rooms }}</span><i></i><span>{{ house.size }}</span><i></i><span>{{ house.metro }}</span></p><div class="tag-row"><el-tag v-for="tag in house.tags" :key="tag" size="small" effect="plain">{{ tag }}</el-tag></div><div class="property-actions"><el-button text :icon="ArrowRight">查看详情</el-button><el-button type="primary" plain @click="openBooking(house)">预约看房</el-button></div></div>
-            <div class="listing-admin-actions"><el-button text :icon="EditPen" @click="openEditListing(house)">编辑</el-button><el-button text type="danger" :icon="Delete" @click="removeListing(house)">删除</el-button></div>
           </article>
         </div>
         <el-empty v-if="!houses.length && !chatLoading" description="后端没有返回符合当前条件的房源，请放宽筛选条件。" />
@@ -281,14 +228,6 @@ onMounted(loadCatalog)
       <template v-if="!confirmedBooking" #footer><el-button @click="bookingDialogV2 = false">取消</el-button><el-button type="primary" :loading="bookingSaving" @click="submitBooking">确认预约</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="listingDialog" width="620" destroy-on-close>
-      <template #header><div><p class="eyebrow">房源管理</p><h2>{{ editingListingId ? '编辑房源' : '新增房源' }}</h2></div></template>
-      <el-form label-position="top" class="listing-form">
-        <div class="listing-form-grid"><el-form-item label="标题" required><el-input v-model="listingForm.title" /></el-form-item><el-form-item label="城市" required><el-input v-model="listingForm.city" /></el-form-item><el-form-item label="区域" required><el-input v-model="listingForm.district" /></el-form-item><el-form-item label="小区" required><el-input v-model="listingForm.community" /></el-form-item><el-form-item label="月租（元）" required><el-input-number v-model="listingForm.price" :min="0" style="width: 100%" /></el-form-item><el-form-item label="面积（m²）"><el-input-number v-model="listingForm.area" :min="0" style="width: 100%" /></el-form-item><el-form-item label="居室"><el-input v-model="listingForm.rooms" /></el-form-item><el-form-item label="朝向"><el-input v-model="listingForm.position" /></el-form-item></div>
-        <el-form-item label="详细地址"><el-input v-model="listingForm.address" /></el-form-item><el-form-item label="房源介绍"><el-input v-model="listingForm.intro" type="textarea" :rows="3" /></el-form-item>
-      </el-form>
-      <template #footer><el-button @click="listingDialog = false">取消</el-button><el-button type="primary" :loading="listingSaving" @click="saveListing">保存</el-button></template>
-    </el-dialog>
   </main>
 </template>
 
@@ -350,25 +289,4 @@ onMounted(loadCatalog)
   top: 46px;
 }
 
-.listing-admin-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 4px;
-  padding: 0 12px 10px;
-}
-
-.listing-admin-actions .el-button {
-  height: 25px;
-  padding: 0 5px;
-}
-
-.listing-form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0 14px;
-}
-
-@media (max-width: 590px) {
-  .listing-form-grid { grid-template-columns: 1fr; }
-}
 </style>

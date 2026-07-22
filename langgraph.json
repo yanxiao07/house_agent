@@ -6,8 +6,7 @@
     "recommend_agent": "agent.recommend:recommend_graph",
     "reserve_agent": "agent.reserve:reserve_graph",
     "extend_agent": "agent.extend:extend_graph",
-    "browse_agent": "agent.browse:browse_graph",
-    "catalog_admin_agent": "agent.catalog_admin:catalog_admin_graph"
+    "browse_agent": "agent.browse:browse_graph"
   },
   "env": ".env",
   "image_distro": "wolfi"
