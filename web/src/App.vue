@@ -1,7 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, ref } from 'vue'
 import {
-  ArrowRight, Calendar, ChatDotRound, Check, CloseBold, CollectionTag, Connection, House, Location, Message, Monitor, RefreshRight, Search, Setting, Star, Tickets, UserFilled,
+  ArrowRight, ChatDotRound, Check, CloseBold, CollectionTag, Connection, House, Location, Message, Monitor, RefreshRight, Search, Setting, Star, Tickets, UserFilled,
 } from '@element-plus/icons-vue'
 import HouseScene from './components/HouseScene.vue'
 import { askAgent } from './services/agent'
@@ -16,10 +16,7 @@ const chatLoading = ref(false)
 const threadId = ref('')
 const pendingInterrupt = ref(false)
 const chatScroll = ref(null)
-const bookingDialog = ref(false)
 const selectedHouse = ref(null)
-const bookingForm = ref({ time: '', phone: '' })
-const booked = ref(false)
 const bookingDialogV2 = ref(false)
 const bookingSaving = ref(false)
 const confirmedBooking = ref(false)
@@ -127,8 +124,6 @@ async function scrollToBottom() {
 
 function openBooking(house) {
   selectedHouse.value = house
-  booked.value = false
-  bookingForm.value = { time: '', phone: '' }
   bookingFormV2.value = { time: '', phone: '', idCard: '' }
   confirmedBooking.value = false
   bookingDialogV2.value = true
@@ -192,24 +187,6 @@ async function cancelAppointment(appointment) {
     appointmentsError.value = `预约取消失败：${error.message}`
   } finally {
     appointmentsLoading.value = false
-  }
-}
-
-async function confirmBooking() {
-  if (!bookingForm.value.time || !bookingForm.value.phone) return
-  chatLoading.value = true
-  try {
-    const time = new Date(bookingForm.value.time).toISOString().slice(0, 10)
-    const content = `预约看房：${selectedHouse.value.title}，时间 ${time}，联系电话 ${bookingForm.value.phone}`
-    messages.value.push({ role: 'user', content })
-    const response = await askAgent(content, threadId.value)
-    applyAgentResponse(response)
-    booked.value = response.state.booking?.status === 'submitted'
-  } catch (error) {
-    messages.value.push({ role: 'assistant', content: `预约提交失败：${error.message}`, error: true })
-  } finally {
-    chatLoading.value = false
-    await scrollToBottom()
   }
 }
 
@@ -277,12 +254,6 @@ onMounted(() => {
       </div>
       <el-empty v-else-if="!appointmentsLoading" description="暂无预约记录" />
     </section>
-
-    <el-dialog v-model="bookingDialog" width="460" class="booking-dialog" destroy-on-close>
-      <template #header><div><p class="eyebrow">预约看房</p><h2>{{ selectedHouse?.title }}</h2></div></template>
-      <el-result v-if="booked" icon="success" title="预约申请已提交" sub-title="顾问将在 15 分钟内与你确认具体安排。"><template #extra><el-button type="primary" @click="bookingDialog = false">知道了</el-button></template></el-result>
-      <el-form v-else label-position="top"><el-form-item label="意向看房时间"><el-date-picker v-model="bookingForm.time" type="datetime" placeholder="选择日期和时间" style="width: 100%" /></el-form-item><el-form-item label="联系电话"><el-input v-model="bookingForm.phone" placeholder="便于顾问确认行程" /></el-form-item><el-alert title="提交后将为你锁定优先带看名额。" type="info" :closable="false" show-icon /></el-form><template v-if="!booked" #footer><el-button @click="bookingDialog = false">取消</el-button><el-button type="primary" :icon="Calendar" @click="confirmBooking">提交申请</el-button></template>
-    </el-dialog>
 
     <el-dialog v-model="bookingDialogV2" width="460" class="booking-dialog" destroy-on-close>
       <template #header><div><p class="eyebrow">预约看房</p><h2>{{ selectedHouse?.title }}</h2></div></template>
