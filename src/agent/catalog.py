@@ -9,6 +9,16 @@ load_dotenv(override=True)
 
 COLUMNS = "id, title, rent_type, rooms, position, area, price, intro, city_name, region_name, community_name, detail_address, head_image, images"
 
+# The current data export stores object keys such as ``bitehouse/<file>.jpg``.
+# A deployment can point this prefix at its CDN/object-storage domain. The local
+# preview images only prevent empty cards when that asset service is unavailable.
+FALLBACK_IMAGES = (
+    "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80",
+    "https://images.unsplash.com/photo-1600566753086-00f18fb6b3ea?auto=format&fit=crop&w=1200&q=80",
+    "https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=1200&q=80",
+    "https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=1200&q=80",
+)
+
 
 def _connection():
     return pymysql.connect(
@@ -22,18 +32,30 @@ def _number(value):
     return float(value) if isinstance(value, Decimal) else value
 
 
+def _image_url(value: str | None, listing_id: int | str) -> tuple[str, bool]:
+    """Resolve a DB image key to a browser URL and flag non-listing previews."""
+    image = str(value or "").strip()
+    if image.startswith(("http://", "https://")):
+        return image, False
+    base_url = os.getenv("PROPERTY_IMAGE_BASE_URL", "").rstrip("/")
+    if image and base_url:
+        return f"{base_url}/{image.lstrip('/')}", False
+    return FALLBACK_IMAGES[int(listing_id) % len(FALLBACK_IMAGES)], True
+
+
 def as_card(row: dict) -> dict:
-    image = row.get("head_image") if str(row.get("head_image", "")).startswith(("http://", "https://")) else None
-    if not image:
+    image_key = row.get("head_image")
+    if not image_key:
         try:
-            image = next((item for item in json.loads(row.get("images") or "[]") if str(item).startswith(("http://", "https://"))), None)
+            image_key = next(iter(json.loads(row.get("images") or "[]")), None)
         except json.JSONDecodeError:
-            image = None
+            image_key = None
+    image, preview_image = _image_url(image_key, row["id"])
     return {
         "id": str(row["id"]), "title": row["title"], "city": row["city_name"], "district": row["region_name"],
         "location": " · ".join(filter(None, [row["community_name"], row["detail_address"]])),
         "price": _number(row["price"]), "rooms": row["rooms"], "size": f"{_number(row['area']):g} m²",
-        "metro": row["rent_type"], "score": 0, "image": image,
+        "metro": row["rent_type"], "score": 0, "image": image, "preview_image": preview_image,
         "tags": [row["rent_type"], row["position"], row["city_name"]], "intro": row["intro"],
     }
 

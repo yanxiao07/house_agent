@@ -8,7 +8,6 @@ export default defineConfig({
       output: {
         manualChunks: {
           vue: ['vue'],
-          'element-plus': ['element-plus', '@element-plus/icons-vue'],
           three: ['three'],
         },
       },

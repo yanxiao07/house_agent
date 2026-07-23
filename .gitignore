@@ -168,3 +168,5 @@ cython_debug/
 # Front-end build output and local dependencies
 web/node_modules/
 web/dist/
+web/test-results/
+web/playwright-report/

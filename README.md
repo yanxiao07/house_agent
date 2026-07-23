@@ -192,6 +192,7 @@ npm run preview
 | `DB_NAME` | 是 | 数据库名称 |
 | `DB_USER` | 是 | 只读或最小权限数据库用户 |
 | `DB_PASSWORD` | 是 | 数据库密码 |
+| `PROPERTY_IMAGE_BASE_URL` | 否 | 数据库相对图片路径的 CDN / 对象存储域名 |
 
 当前房源映射使用 `house` 表中的 `id`、`title`、`rent_type`、`rooms`、`position`、`area`、`price`、`city_name`、`region_name`、`community_name`、`detail_address`、`head_image`、`images` 等字段。
 
@@ -352,6 +353,22 @@ cd web
 npm run build
 ```
 
+### 浏览器端到端检查
+
+在 LangGraph Server（默认 `2024`）和前端开发服务（默认 `5173`）均启动后，执行：
+
+```powershell
+cd web
+npm run test:e2e
+```
+
+该检查通过 Edge 驱动真实浏览器，不使用 mock 数据，验证以下流程：
+
+- 首屏从 `browse_agent` 读取 MySQL 房源目录，卡片图片实际完成加载；
+- “找房工作台 / 我的预约 / 合同审查”是相互独立的页面视图，而不是向下堆叠的长页面；
+- 合同审查会展示结构化风险与 3 条 RAG 检索依据；
+- 390px 移动端下的主导航和首张房源卡片可见。
+
 推荐、预约和预约中心的端到端验证需要有效的模型凭据、可访问的 MySQL 与运行中的 LangGraph Server。
 
 FastAPI 接口测试使用临时 SQLite 数据库，不依赖 MySQL、PostgreSQL 或模型 Key。
@@ -364,6 +381,16 @@ FastAPI 接口测试使用临时 SQLite 数据库，不依赖 MySQL、PostgreSQL
 2. 确认 `web/.env` 的 `VITE_LANGGRAPH_API_URL` 指向该地址。
 3. 检查 MySQL 连接变量与 `house` 表是否可访问。
 4. 查看 LangGraph Server 日志，确认 `browse_agent` 已注册。
+
+### 房源图片无法显示
+
+数据库当前存储的是类似 `bitehouse/<file>.jpg` 的对象键，而不是可由浏览器直接访问的 URL。生产环境需要在后端 `.env` 中配置实际对象存储或 CDN 域名：
+
+```dotenv
+PROPERTY_IMAGE_BASE_URL=https://your-cdn.example.com
+```
+
+未配置时，服务端会明确返回 `preview_image: true` 并使用预览图，保证卡片不会出现空白区域；预览图不是原房源实拍图。配置后无需改动前端，接口会自动返回真实图片地址。
 
 ### 助手返回内容但没有推荐卡片
 
