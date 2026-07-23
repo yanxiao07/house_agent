@@ -406,6 +406,24 @@ PROPERTY_IMAGE_BASE_URL=https://your-cdn.example.com
 
 ## 生产部署建议
 
+### GitHub Pages 前端部署
+
+仓库已提供 `.github/workflows/deploy-pages.yml`。该工作流会在 `main` 分支的前端文件变更后，构建并发布 `web/dist` 到 GitHub Pages；项目站点的默认地址为：
+
+```text
+https://yanxiao07.github.io/house_agent/
+```
+
+首次启用时，在 GitHub 仓库的 **Settings -> Pages -> Build and deployment** 中选择 **GitHub Actions**。随后在 **Settings -> Secrets and variables -> Actions -> Variables** 配置：
+
+| Variable | 是否必填 | 说明 |
+| --- | --- | --- |
+| `LANGGRAPH_API_URL` | 是 | 公网可访问的 LangGraph Server HTTPS 地址，例如 `https://agent.example.com`。 |
+| `LANGGRAPH_ASSISTANT_ID` | 否 | 默认 `house_agent`。 |
+| `RENTAL_API_URL` | 否 | 公网可访问的 FastAPI 网关 HTTPS 地址，用于会话与预约的业务持久化。 |
+
+不要把模型 Key、数据库密码或其他密钥配置为 GitHub Actions Variable。它们只能保存于后端部署平台的密钥管理中。GitHub Pages 仅发布静态 Vue 文件，LangGraph、FastAPI、MySQL 和模型服务必须独立部署，并通过 HTTPS 与 CORS 允许来源 `https://yanxiao07.github.io`。
+
 - 使用 HTTPS 反向代理，并限制 CORS 来源。
 - 为 LangGraph API 接入认证、会话隔离、限流和审计日志。
 - MySQL 使用只读最小权限账号处理房源查询；预约状态应使用单独的业务数据库表或具备备份策略的持久化 Store。
