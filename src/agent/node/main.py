@@ -18,14 +18,15 @@ def get_store_info(state: State, runtime: Runtime[ContextSchema], *, store: Base
 
 
 class UserMessage(BaseModel):
-    type: Literal["recommend_house", "reserve_house", "get_info", "others"] = Field(
-        description="租房推荐、预约房源、查询本人偏好或其他问题"
+    type: Literal["recommend_house", "reserve_house", "contract_review", "get_info", "others"] = Field(
+        description="租房推荐、预约房源、合同审查、查询本人偏好或其他问题"
     )
 
 
 def indentify_question(state: State):
     prompt = """将用户问题分类为且仅分类为：
 recommend_house（找房、推荐、筛选房源），reserve_house（预约、下单、预订房源），
+contract_review（租房合同、押金、租金、违约、解约风险审查），
 get_info（查询本人历史订单、预算和偏好），others（其余问题）。"""
     result = (
         get_model()

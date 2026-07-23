@@ -5,6 +5,7 @@
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Vue](https://img.shields.io/badge/Vue-3-42B883?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-Agent%20workflow-1C3C3C)](https://langchain-ai.github.io/langgraph/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Async%20Gateway-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
 ## 目录
@@ -38,6 +39,7 @@
 - **预约状态突出显示**：工单生成成功后，对应房源卡片会置顶并标记为“预约已确认”。
 - **我的预约**：按预约手机号读取已生成工单，展示房源、工单号、看房时间、联系电话与状态。
 - **取消预约**：租客可以取消未取消的预约，预约记录保留并更新为已取消状态，便于追踪历史。
+- **合同风险分析**：内置租赁条款知识库，检索押金、租金、违约、维修与居住权相关依据，输出结构化风险、原始条款与协商建议。
 
 ### 工作台体验
 
@@ -51,6 +53,7 @@
 ```mermaid
 flowchart LR
     U["租客浏览器 / Vue 3"] -->|"SSE / threads/{id}/runs/stream"| LG["LangGraph Server"]
+    U -->|"REST /api/*"| API["FastAPI 异步网关"]
     LG --> H["house_agent\n意图识别与主编排"]
     H --> R["recommend_agent\nSQL 推荐子图"]
     H --> V["reserve_agent\n预约子图"]
@@ -60,6 +63,7 @@ flowchart LR
     B --> DB
     V --> S[("LangGraph Store\n预约与偏好")]
     A --> S
+    API --> P[("PostgreSQL / SQLite\n用户、会话、预约")]
 ```
 
 ### 房源推荐数据流
@@ -86,8 +90,9 @@ flowchart LR
 | UI | Element Plus、`@element-plus/icons-vue` | 表单、对话框、空状态、标签与无障碍基础组件 |
 | 3D | Three.js | 房源雷达场景 |
 | Agent 编排 | LangGraph、LangChain | 状态图、子图、工具调用、中断恢复与持久化 Store |
+| 业务网关 | FastAPI、AnyIO | 异步 REST API、会话记录、用户偏好与预约业务数据 |
 | 模型接入 | `langchain-openai` | OpenAI 兼容接口；可配置 DeepSeek 或其他兼容服务 |
-| 数据库 | MySQL、PyMySQL、SQLAlchemy | 房源读取与 SQL 工具链 |
+| 数据库 | MySQL、PostgreSQL、SQLite、SQLAlchemy | MySQL 房源读取；PostgreSQL 业务数据；SQLite 本地开发测试 |
 | 工程质量 | Ruff、Pytest | 静态检查和测试 |
 
 ## 快速开始
@@ -123,6 +128,14 @@ langgraph dev --port 2024
 
 服务启动后默认监听 `http://127.0.0.1:2024`。
 
+可选启动 FastAPI 业务网关（用户会话、预约业务数据、合同分析 REST API）：
+
+```powershell
+uvicorn agent.api:app --reload --port 8000
+```
+
+网关文档地址为 `http://127.0.0.1:8000/docs`。
+
 ### 2. 配置并启动前端
 
 新开一个终端：
@@ -139,6 +152,7 @@ npm run dev
 ```dotenv
 VITE_LANGGRAPH_API_URL=http://127.0.0.1:2024
 VITE_LANGGRAPH_ASSISTANT_ID=house_agent
+VITE_RENTAL_API_URL=http://127.0.0.1:8000
 ```
 
 访问 Vite 输出的地址，默认是 `http://127.0.0.1:5173`。
@@ -180,6 +194,14 @@ npm run preview
 | `DB_PASSWORD` | 是 | 数据库密码 |
 
 当前房源映射使用 `house` 表中的 `id`、`title`、`rent_type`、`rooms`、`position`、`area`、`price`、`city_name`、`region_name`、`community_name`、`detail_address`、`head_image`、`images` 等字段。
+
+### 业务数据配置
+
+| 变量 | 必填 | 说明 |
+| --- | --- | --- |
+| `DATABASE_URL` | 否 | 用户、会话、预约业务库 URL；生产推荐 `postgresql+psycopg://user:password@host:5432/house_agent` |
+
+未设置时，项目使用 `.langgraph_api/rental.db` SQLite 文件，适合本地运行和测试；生产环境应配置 PostgreSQL。
 
 ### LangSmith（可选）
 
@@ -224,6 +246,7 @@ LANGSMITH_PROJECT=house-agent
 | `recommend_agent` | `agent.recommend:recommend_graph` | 提取租房需求、检查数据库结构、生成/校验/执行 SQL |
 | `reserve_agent` | `agent.reserve:reserve_graph` | 通过中断收集预约信息并生成预约工单 |
 | `appointments_agent` | `agent.appointments:appointments_graph` | 查询、补全、取消预约记录 |
+| `contracts_agent` | `agent.contracts:contracts_graph` | 检索合同知识并输出结构化条款风险 |
 | `browse_agent` | `agent.browse:browse_graph` | 读取首屏房源目录 |
 | `extend_agent` | `agent.extend:extend_graph` | 处理非核心租房问答 |
 
@@ -242,6 +265,20 @@ POST /threads/{thread_id}/runs/stream
 - `updates`：节点增量状态，包含预约或补充信息的中断事件。
 - `__interrupt__`：需要用户输入时的暂停信息；前端用 `command.resume` 在同一线程恢复。
 
+### FastAPI 业务接口
+
+| 方法 | 路径 | 职责 |
+| --- | --- | --- |
+| `GET` | `/api/health` | 网关健康检查 |
+| `GET` | `/api/listings` | 异步读取只读房源卡片 |
+| `GET/PUT` | `/api/users/{user_id}/preferences` | 读取或写入租客偏好 |
+| `POST` | `/api/conversations` | 写入一条会话消息 |
+| `GET` | `/api/users/{user_id}/conversations/{session_id}` | 恢复会话历史 |
+| `GET` | `/api/users/{user_id}/bookings` | 查询业务预约记录 |
+| `PUT` | `/api/bookings/{order_id}` | 幂等写入预约业务记录 |
+| `POST` | `/api/users/{user_id}/bookings/{order_id}/cancel` | 取消预约 |
+| `POST` | `/api/contracts/analyze` | 合同知识检索与风险分析 |
+
 ## 项目结构
 
 ```text
@@ -251,6 +288,9 @@ house-agent/
 │   ├── recommend.py             # 房源推荐子图
 │   ├── reserve.py               # 预约子图
 │   ├── appointments.py          # 我的预约查询/取消图
+│   ├── contracts.py             # 合同 RAG 检索、风险分析与合同图
+│   ├── api.py                   # FastAPI 异步业务网关
+│   ├── persistence.py            # PostgreSQL/SQLite 用户、会话、预约仓储
 │   ├── browse.py                # 首屏房源目录图
 │   ├── catalog.py               # MySQL 房源到前端卡片的只读映射
 │   ├── common/
@@ -284,6 +324,12 @@ house-agent/
 - 前端会在本地浏览器保存最近一次预约手机号，以便自动刷新“我的预约”；不会把手机号提交到代码仓库。
 - 当前示例未接入登录/短信验证码。生产环境必须以已认证的用户 ID 替代手机号直接查询，并在服务端验证预约归属。
 
+### 合同审查
+
+- 合同文本仅用于本地检索和规则分析；当前实现不依赖 LLM 才能给出初步风险提示。
+- 返回值包含命中条款、风险级别、协商建议和知识依据，便于前端稳定展示与后续接入向量数据库/LLM 总结。
+- 本功能不构成法律意见，重要签约请咨询专业人士。
+
 ### 数据库与模型调用
 
 - 数据库、模型密钥和 LangSmith 密钥只从环境变量读取。
@@ -307,6 +353,8 @@ npm run build
 ```
 
 推荐、预约和预约中心的端到端验证需要有效的模型凭据、可访问的 MySQL 与运行中的 LangGraph Server。
+
+FastAPI 接口测试使用临时 SQLite 数据库，不依赖 MySQL、PostgreSQL 或模型 Key。
 
 ## 常见问题
 

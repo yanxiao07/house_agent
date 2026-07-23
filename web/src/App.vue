@@ -1,10 +1,19 @@
 <script setup>
 import { computed, nextTick, onMounted, ref } from 'vue'
 import {
-  ArrowRight, ChatDotRound, Check, CloseBold, CollectionTag, Connection, House, Location, Message, Monitor, RefreshRight, Search, Setting, Star, Tickets, UserFilled,
+  ArrowRight, ChatDotRound, Check, CloseBold, CollectionTag, Connection, Document, House, Location, Message, Monitor, RefreshRight, Search, Setting, Star, Tickets, UserFilled,
 } from '@element-plus/icons-vue'
 import HouseScene from './components/HouseScene.vue'
 import { askAgent } from './services/agent'
+import { cancelPersistedBooking, loadConversation, persistBooking, recordConversation } from './services/gateway'
+
+function getBrowserId(key, prefix) {
+  const stored = window.localStorage.getItem(key)
+  if (stored) return stored
+  const value = `${prefix}-${window.crypto.randomUUID()}`
+  window.localStorage.setItem(key, value)
+  return value
+}
 
 const city = ref('上海')
 const districts = ref([])
@@ -13,7 +22,8 @@ const keyword = ref('')
 const activeTab = ref('recommend')
 const chatInput = ref('')
 const chatLoading = ref(false)
-const threadId = ref('')
+const tenantId = getBrowserId('house-agent-user-id', 'tenant')
+const threadId = ref(window.localStorage.getItem('house-agent-thread-id') || '')
 const pendingInterrupt = ref(false)
 const chatScroll = ref(null)
 const selectedHouse = ref(null)
@@ -26,6 +36,10 @@ const appointmentPhone = ref(window.localStorage.getItem('house-agent-phone') ||
 const appointments = ref([])
 const appointmentsLoading = ref(false)
 const appointmentsError = ref('')
+const contractText = ref('')
+const contractLoading = ref(false)
+const contractAnalysis = ref(null)
+const contractError = ref('')
 
 const districtsOptions = ['静安', '徐汇', '长宁', '浦东', '杨浦']
 const houses = ref([])
@@ -40,12 +54,28 @@ const sortedHouses = computed(() => {
 
 function applyAgentResponse(response) {
   threadId.value = response.threadId || threadId.value
+  if (threadId.value) window.localStorage.setItem('house-agent-thread-id', threadId.value)
   if (Array.isArray(response.state.listings)) houses.value = response.state.listings
   pendingInterrupt.value = response.interrupted
   if (response.content) {
     const content = formatAssistantContent(response.content)
     markReservedListing(content)
     messages.value.push({ role: 'assistant', content })
+  }
+}
+
+function persistTurn(role, content) {
+  // The REST gateway is optional in local demos, so persistence failures never block chat.
+  recordConversation(tenantId, threadId.value, role, content).catch(() => {})
+}
+
+async function restoreConversation() {
+  if (!threadId.value) return
+  try {
+    const history = await loadConversation(tenantId, threadId.value)
+    if (history.length) messages.value = history.map((item) => ({ role: item.role, content: item.content }))
+  } catch {
+    // The live LangGraph session remains usable even when the optional gateway is offline.
   }
 }
 
@@ -86,7 +116,10 @@ async function runSearch() {
   const content = `找房：${city.value}${districtText}，预算 ${budget.value[0]} 到 ${budget.value[1]} 元/月${keywordText}`
   chatLoading.value = true
   try {
-    applyAgentResponse(await askAgent(content, threadId.value, pendingInterrupt.value))
+    const response = await askAgent(content, threadId.value, pendingInterrupt.value)
+    applyAgentResponse(response)
+    persistTurn('user', content)
+    persistTurn('assistant', formatAssistantContent(response.content))
   } catch (error) {
     messages.value.push({ role: 'assistant', content: `后端请求失败：${error.message}`, error: true })
   } finally {
@@ -108,7 +141,10 @@ async function sendMessage() {
   chatLoading.value = true
   await scrollToBottom()
   try {
-    applyAgentResponse(await askAgent(content, threadId.value, pendingInterrupt.value))
+    const response = await askAgent(content, threadId.value, pendingInterrupt.value)
+    applyAgentResponse(response)
+    persistTurn('user', content)
+    persistTurn('assistant', formatAssistantContent(response.content))
   } catch (error) {
     messages.value.push({ role: 'assistant', content: `抱歉，${error.message}。请稍后重试。`, error: true })
   } finally {
@@ -142,7 +178,15 @@ async function submitBooking() {
     appointmentPhone.value = bookingFormV2.value.phone.trim()
     window.localStorage.setItem('house-agent-phone', appointmentPhone.value)
     const orderId = response.content.match(/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}/i)?.[0]
-    if (orderId) await syncAppointment(orderId)
+    if (orderId) {
+      await syncAppointment(orderId)
+      persistBooking({
+        order_id: orderId, user_id: tenantId, house_id: String(selectedHouse.value.id),
+        house_title: selectedHouse.value.title, phone_number: appointmentPhone.value,
+        viewing_time: bookingFormV2.value.time ? new Date(bookingFormV2.value.time).toISOString() : null,
+        status: 'confirmed',
+      }).catch(() => {})
+    }
     confirmedBooking.value = true
   } catch (error) {
     messages.value.push({ role: 'assistant', content: `预约提交失败：${error.message}`, error: true })
@@ -182,6 +226,7 @@ async function cancelAppointment(appointment) {
   try {
     const response = await askAgent(JSON.stringify({ action: 'cancel', order_id: appointment.order_id, phone_number: appointmentPhone.value }), '', false, 'appointments_agent')
     appointments.value = response.state.appointments || []
+    cancelPersistedBooking(tenantId, appointment.order_id).catch(() => {})
     reservedHouseIds.value = reservedHouseIds.value.filter((houseId) => !houses.value.find((house) => String(house.id) === houseId && house.title === appointment.title))
   } catch (error) {
     appointmentsError.value = `预约取消失败：${error.message}`
@@ -190,9 +235,25 @@ async function cancelAppointment(appointment) {
   }
 }
 
+async function analyzeContract() {
+  const text = contractText.value.trim()
+  if (text.length < 20 || contractLoading.value) return
+  contractLoading.value = true
+  contractError.value = ''
+  try {
+    const response = await askAgent(text, '', false, 'contracts_agent')
+    contractAnalysis.value = response.state.contract_analysis || null
+  } catch (error) {
+    contractError.value = `合同分析失败：${error.message}`
+  } finally {
+    contractLoading.value = false
+  }
+}
+
 onMounted(() => {
   loadCatalog()
   loadAppointments()
+  restoreConversation()
 })
 
 </script>
@@ -253,6 +314,13 @@ onMounted(() => {
         </article>
       </div>
       <el-empty v-else-if="!appointmentsLoading" description="暂无预约记录" />
+    </section>
+
+    <section id="guide" class="contract-section">
+      <div class="contract-heading"><div><p class="eyebrow">合同审查</p><h2>租房合同风险分析</h2></div><el-icon><Document /></el-icon></div>
+      <div class="contract-workspace"><el-input v-model="contractText" type="textarea" :rows="7" resize="vertical" placeholder="粘贴租房合同条款，系统将识别押金、租金、违约、维修与居住权风险" /><el-button type="primary" :loading="contractLoading" @click="analyzeContract">分析合同</el-button></div>
+      <el-alert v-if="contractError" :title="contractError" type="error" :closable="false" show-icon />
+      <template v-if="contractAnalysis"><p class="contract-summary">{{ contractAnalysis.summary }}</p><div v-if="contractAnalysis.risks.length" class="risk-grid"><article v-for="risk in contractAnalysis.risks" :key="`${risk.category}-${risk.clause}`" class="risk-card" :class="risk.level"><div><el-tag :type="risk.level === 'high' ? 'danger' : 'warning'" effect="light">{{ risk.level === 'high' ? '高风险' : '需关注' }}</el-tag><strong>{{ risk.category }}</strong></div><p>{{ risk.clause }}</p><small>{{ risk.suggestion }}</small></article></div><el-empty v-else description="未识别到预设高风险关键词，请继续核对金额、期限和签约主体。" /><div class="knowledge-row"><span v-for="item in contractAnalysis.knowledge" :key="item.topic">{{ item.topic }} · {{ item.source }}</span></div><p class="contract-disclaimer">{{ contractAnalysis.disclaimer }}</p></template>
     </section>
 
     <el-dialog v-model="bookingDialogV2" width="460" class="booking-dialog" destroy-on-close>
@@ -431,10 +499,44 @@ onMounted(() => {
   font-size: 11px;
 }
 
+/* Contract review tokens: primitive -> semantic -> component. */
+.contract-section {
+  --contract-surface: #fff;
+  --contract-border: #dce7e1;
+  --contract-text: #293a32;
+  --contract-muted: #718179;
+  --contract-accent: #287464;
+  --contract-risk-high: #b64736;
+  --contract-risk-medium: #a67525;
+  --contract-card-bg: var(--contract-surface);
+  margin-top: 42px;
+  padding-top: 26px;
+  border-top: 1px solid var(--contract-border);
+}
+
+.contract-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.contract-heading h2 { margin: 0; color: var(--contract-text); font-size: 22px; }
+.contract-heading > .el-icon { color: var(--contract-accent); font-size: 26px; }
+.contract-workspace { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: end; }
+.contract-workspace .el-button { height: 32px; }
+.contract-summary { margin: 18px 0 12px; color: var(--contract-text); font-size: 14px; font-weight: 650; }
+.risk-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.risk-card { padding: 14px; border: 1px solid var(--contract-border); border-left: 3px solid var(--contract-risk-medium); border-radius: 7px; background: var(--contract-card-bg); }
+.risk-card.high { border-left-color: var(--contract-risk-high); }
+.risk-card > div { display: flex; align-items: center; gap: 8px; }.risk-card strong { color: var(--contract-text); font-size: 13px; }.risk-card p { margin: 10px 0 8px; color: #4b5b53; font-size: 13px; line-height: 1.6; }.risk-card small { color: var(--contract-muted); font-size: 12px; line-height: 1.55; }
+.knowledge-row { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }.knowledge-row span { padding: 4px 7px; border: 1px solid #d9e8e2; border-radius: 4px; color: #4c7469; font-size: 11px; }.contract-disclaimer { margin: 12px 0 0; color: var(--contract-muted); font-size: 11px; }
+
 @media (max-width: 700px) {
   .appointment-heading { align-items: flex-start; flex-direction: column; }
   .appointment-query { width: 100%; }
   .appointment-grid { grid-template-columns: 1fr; }
+  .contract-workspace, .risk-grid { grid-template-columns: 1fr; }
 }
 
 </style>

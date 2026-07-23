@@ -163,6 +163,7 @@ cython_debug/
 .idea/
 .langgraph_api/
 .langgraph-dev.*.log
+.house-agent.db
 
 # Front-end build output and local dependencies
 web/node_modules/

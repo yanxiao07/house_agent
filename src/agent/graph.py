@@ -4,6 +4,7 @@ from langgraph.constants import END, START
 from langgraph.graph import StateGraph
 
 from agent.common.context import ContextSchema
+from agent.contracts import contracts_graph
 from agent.extend import extend_graph
 from agent.node.main import (
     get_store_info,
@@ -20,6 +21,7 @@ builder.add_node("get_store_info", get_store_info)
 builder.add_node("indentify_question", indentify_question)
 builder.add_node("recommend_graph", recommend_graph)
 builder.add_node("reserve_graph", reserve_graph)
+builder.add_node("contracts_graph", contracts_graph)
 builder.add_node("extend_graph", extend_graph)
 builder.add_node("get_user_preferences", get_user_preferences)
 builder.add_node("need_reserve", need_reserve)
@@ -30,11 +32,12 @@ builder.add_edge("get_store_info", "indentify_question")
 def route_message(
     state: State,
 ) -> Literal[
-    "recommend_graph", "reserve_graph", "extend_graph", "get_user_preferences"
+    "recommend_graph", "reserve_graph", "contracts_graph", "extend_graph", "get_user_preferences"
 ]:
     return {
         "recommend_house": "recommend_graph",
         "reserve_house": "reserve_graph",
+        "contract_review": "contracts_graph",
         "get_info": "get_user_preferences",
     }.get(state["user_intent"], "extend_graph")
 
@@ -49,6 +52,7 @@ builder.add_conditional_edges(
     "need_reserve", should_reserve, {"reserve_graph": "reserve_graph", END: END}
 )
 builder.add_edge("reserve_graph", END)
+builder.add_edge("contracts_graph", END)
 builder.add_edge("get_user_preferences", END)
 builder.add_edge("extend_graph", END)
 graph = builder.compile()

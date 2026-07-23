@@ -8,6 +8,7 @@ class State(MessagesState):
     user_preferences: dict
     user_intent: str
     listings: list[dict]
+    contract_analysis: dict
 
 
 class NeedReserveOutput(TypedDict):
