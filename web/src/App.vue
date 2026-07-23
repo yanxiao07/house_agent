@@ -1,7 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, ref } from 'vue'
 import {
-  ArrowRight, ChatDotRound, Check, CloseBold, CollectionTag, Connection, Document, House, Location, Message, Monitor, RefreshRight, Search, Setting, Star, Tickets, UserFilled,
+  ArrowRight, ChatDotRound, Check, CloseBold, CollectionTag, Connection, Document, House, Location, Message, Monitor, Plus, RefreshRight, Search, Setting, Star, Tickets, UserFilled,
 } from '@element-plus/icons-vue'
 import HouseScene from './components/HouseScene.vue'
 import { askAgent } from './services/agent'
@@ -235,6 +235,16 @@ async function cancelAppointment(appointment) {
   }
 }
 
+function startNewConversation() {
+  if (chatLoading.value) return
+  // Keep user business data intact while ensuring the next message creates a new graph thread.
+  threadId.value = ''
+  pendingInterrupt.value = false
+  chatInput.value = ''
+  messages.value = []
+  window.localStorage.removeItem('house-agent-thread-id')
+}
+
 async function analyzeContract() {
   const text = contractText.value.trim()
   if (text.length < 20 || contractLoading.value) return
@@ -298,7 +308,7 @@ onMounted(() => {
 
       <aside class="assistant-column">
         <section class="building-card"><div class="building-copy"><p class="eyebrow">房源雷达</p><h2>通勤 35 分钟内</h2><p>已覆盖 42 个可约小区</p><button>调整通勤地点 <el-icon><ArrowRight /></el-icon></button></div><HouseScene /></section>
-        <section class="assistant-card"><div class="assistant-header"><div class="assistant-avatar"><el-icon><ChatDotRound /></el-icon></div><div><h2>租赁顾问</h2><p><i></i>正在为你服务</p></div><el-button text circle aria-label="设置"><el-icon><Setting /></el-icon></el-button></div><el-scrollbar ref="chatScroll" class="chat-history"><div v-for="(message, index) in messages" :key="index" class="chat-message" :class="message.role"><p>{{ message.content }}</p></div><div v-if="chatLoading" class="chat-message assistant typing"><span></span><span></span><span></span></div></el-scrollbar><div class="chat-suggestions"><button @click="selectSuggestion('预算 8000，在静安找一居室')">静安一居</button><button @click="selectSuggestion('帮我预约安福路公寓')">预约看房</button></div><div class="chat-input"><el-input v-model="chatInput" type="textarea" :rows="2" resize="none" placeholder="描述你的租房需求" @keydown.enter.exact.prevent="sendMessage" /><el-button type="primary" circle :loading="chatLoading" aria-label="发送" @click="sendMessage"><el-icon><ArrowRight /></el-icon></el-button></div></section>
+        <section class="assistant-card"><div class="assistant-header"><div class="assistant-avatar"><el-icon><ChatDotRound /></el-icon></div><div><h2>租赁顾问</h2><p><i></i>正在为你服务</p></div><div class="assistant-actions"><el-button text :icon="Plus" :disabled="chatLoading" @click="startNewConversation">新对话</el-button><el-button text circle aria-label="设置"><el-icon><Setting /></el-icon></el-button></div></div><el-scrollbar ref="chatScroll" class="chat-history"><div v-for="(message, index) in messages" :key="index" class="chat-message" :class="message.role"><p>{{ message.content }}</p></div><div v-if="chatLoading" class="chat-message assistant typing"><span></span><span></span><span></span></div></el-scrollbar><div class="chat-suggestions"><button @click="selectSuggestion('预算 8000，在静安找一居室')">静安一居</button><button @click="selectSuggestion('帮我预约安福路公寓')">预约看房</button></div><div class="chat-input"><el-input v-model="chatInput" type="textarea" :rows="2" resize="none" placeholder="描述你的租房需求" @keydown.enter.exact.prevent="sendMessage" /><el-button type="primary" circle :loading="chatLoading" aria-label="发送" @click="sendMessage"><el-icon><ArrowRight /></el-icon></el-button></div></section>
         <section class="service-card"><el-icon><CollectionTag /></el-icon><div><strong>服务保障</strong><p>真实房源核验 · 一对一带看 · 签约支持</p></div><el-icon class="service-arrow"><ArrowRight /></el-icon></section>
       </aside>
     </div>
